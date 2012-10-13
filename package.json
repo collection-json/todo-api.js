@@ -13,6 +13,10 @@
     "type": "git",
     "url": "git://github.com/collection-json/todo-api.js.git"
   },
+  "engines": {
+    "node": "0.8.x",
+    "npm":  "1.1.x"
+  },
   "author": "",
   "license": "MIT",
   "dependencies": {
