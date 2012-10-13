@@ -7,23 +7,51 @@
 
 // for express
 var express = require('express');
-var app = module.exports = express.createServer();
+var app = module.exports = express();
 
-// for couch
-var cradle = require('cradle');
-var db = new(cradle.Connection)().database('collection-data-tasks');
+var port = process.env.PORT||3000;
+var site = "http://localhost:"+port||process.env.SITE;
+
+var db = require('./db');
 
 // global data
 var contentType = 'application/json';
 
 // Configuration
 app.configure(function(){
+  app.use(require('express-partials')());
   app.set('views', __dirname + '/views');
   app.set('view engine', 'ejs');
   app.use(express.bodyParser());
   app.use(express.methodOverride());
+
+  // Body Parser
+  app.use(function(req, res, next) {
+    if (req.get("content-type") === "application/collection+json") {
+      var buf = "";
+      req.on("data", function(chunk) {
+        buf+=chunk;
+      });
+      req.on("end", function() {
+        try {
+          req.body = JSON.parse(buf);
+          next()
+        }
+        catch(e) {
+          e.body = buf;
+          e.status = 400;
+          next(e);
+        }
+      });
+    }
+    else{
+      next();
+    }
+  });
+
   app.use(app.router);
   app.use(express.static(__dirname + '/public'));
+
 });
 
 app.configure('development', function(){
@@ -34,20 +62,17 @@ app.configure('production', function(){
   app.use(express.errorHandler()); 
 });
 
-// register custom media type as a JSON format
-express.bodyParser.parse['application/collection+json'] = JSON.parse;
-
 // Routes
 
 /* handle default task list */
-app.get('/collection/tasks/', function(req, res){
+app.get('/collection/tasks', function(req, res){
 
-  var view = '/_design/example/_view/due_date';
+  var view = 'due_date';
   
   db.get(view, function (err, doc) {
     res.header('content-type',contentType);
     res.render('tasks', {
-      site  : 'http://localhost:3000/collection/tasks/',
+      site  : site+'/collection/tasks',
       items : doc
     });
   });
@@ -58,7 +83,7 @@ app.get('/collection/tasks/;queries', function(req, res){
   res.header('content-type',contentType);
   res.render('queries', {
     layout : 'item-layout',
-    site  : 'http://localhost:3000/collection/tasks/'
+    site  : site+'/collection/tasks'
   });
 });
 
@@ -66,18 +91,18 @@ app.get('/collection/tasks/;template', function(req, res){
   res.header('content-type',contentType);
   res.render('template', {
     layout : 'item-layout',
-    site  : 'http://localhost:3000/collection/tasks/'
+    site  : site+'/collection/tasks'
   });
 });
 
 app.get('/collection/tasks/;all', function(req, res){
 
-    var view = '/_design/example/_view/all';
+    var view = 'all';
     
     db.get(view, function (err, doc) {
     res.header('content-type',contentType);
     res.render('tasks', {
-      site  : 'http://localhost:3000/collection/tasks/',
+      site  : site+'/collection/tasks',
       items : doc
     });
   });
@@ -85,12 +110,12 @@ app.get('/collection/tasks/;all', function(req, res){
 
 app.get('/collection/tasks/;open', function(req, res){
 
-    var view = '/_design/example/_view/open';
+    var view = 'open';
     
     db.get(view, function (err, doc) {
     res.header('content-type',contentType);
     res.render('tasks', {
-      site  : 'http://localhost:3000/collection/tasks/',
+      site  : site+'/collection/tasks',
       items : doc
     });
   });
@@ -98,12 +123,12 @@ app.get('/collection/tasks/;open', function(req, res){
 
 app.get('/collection/tasks/;closed', function(req, res){
 
-    var view = '/_design/example/_view/closed';
+    var view = 'closed';
     
     db.get(view, function (err, doc) {
     res.header('content-type',contentType);
     res.render('tasks', {
-      site  : 'http://localhost:3000/collection/tasks/',
+      site  : site+'/collection/tasks',
       items : doc
     });
   });
@@ -118,12 +143,12 @@ app.get('/collection/tasks/;date-range', function(req, res){
     options.startkey=String.fromCharCode(34)+d1+String.fromCharCode(34);
     options.endkey=String.fromCharCode(34)+d2+String.fromCharCode(34);
      
-    var view = '/_design/example/_view/due_date';   
+    var view = 'due_date';   
     
     db.get(view, options, function (err, doc) {
     res.header('content-type',contentType);
     res.render('tasks', {
-      site  : 'http://localhost:3000/collection/tasks/',
+      site  : site+'/collection/tasks',
       items : doc,
       query : view
     });
@@ -131,23 +156,24 @@ app.get('/collection/tasks/;date-range', function(req, res){
 });
 
 /* handle single task item */
-app.get('/collection/tasks/:i', function(req, res){
-
-    var view = '/'+req.params.i;
+app.get('/collection/tasks/:i', function(req, res, next){
     
-    db.get(view, function (err, doc) {
+  db.get(req.params.i, function (err, doc) {
+    if (err) {
+      return next(err);
+    }
+    
     res.header('content-type',contentType);
-    res.header('etag',doc._rev);
     res.render('task', {
       layout : 'item-layout',
-      site  : 'http://localhost:3000/collection/tasks/',
+      site  : site+'/collection/tasks',
       item : doc
     });
   });
 });
 
 /* handle creating a new task */
-app.post('/collection/tasks/', function(req, res){
+app.post('/collection/tasks', function(req, res){
   
   var description, completed, dateDue, data, i, x;
   
@@ -183,7 +209,7 @@ app.post('/collection/tasks/', function(req, res){
       res.send(err);
     }
     else {
-      res.redirect('/collection/tasks/', 302);
+      res.redirect('/collection/tasks', 302);
     }
   });  
 });
@@ -222,7 +248,7 @@ app.put('/collection/tasks/:i', function(req, res) {
    
   db.save(idx, rev, item, function (err, doc) {
     // return the same item
-    res.redirect('/collection/tasks/'+idx, 302);
+    res.redirect('/collection/tasks'+idx, 302);
   });
 });
 
@@ -261,6 +287,6 @@ function today() {
 
 // Only listen on $ node app.js
 if (!module.parent) {
-  app.listen(3000);
-  console.log("Express server listening on port %d", app.address().port);
+  app.listen(port);
+  console.log("Express server listening on port %d", port);
 }
